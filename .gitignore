@@ -1,0 +1,6 @@
+*.ovf
+*.vmdk
+~*docx
+*.tmp
+venv/*
+*idea/*
