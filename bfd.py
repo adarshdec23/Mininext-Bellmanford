@@ -4,6 +4,8 @@ import threading
 import Queue
 import json
 import sys
+import time
+
 
 class BF:
 
@@ -41,16 +43,17 @@ class BF:
             while True:
                 try:
                     data = connection.recv(1024)
-                    # Save the data onto the q
-                    BF.q.put(data)
                     if not data:
                         break
+                    # Save the data onto the q
+                    BF.q.put(data)
                 except socket.error:
                     # Don't do anything with an error. Life moves on with or without errors
-                    pass
+                    print ("Socket error while trying to listen")
 
     def listen(self):
         # Spawn a thread that listens to incoming requests
+        print ("Spawning a thread")
         thread = threading.Thread(target=BF.thread_listener)
         thread.daemon = True
         thread.start()
@@ -60,7 +63,16 @@ class BF:
         for node, ip in self.neighbour_ip.items():
             port = config.port
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.connect((ip, port))
+            connected = False
+            while not connected:
+                try:
+                    s.connect((ip, port))
+                    connected = True
+                except:
+                    print ("Failed to connect to: ", ip)
+                    print ("Backing off for two seconds before next re-try")
+                    time.sleep(2)
+
             self.connections[node] = s
 
     def read_config(self):
@@ -74,7 +86,7 @@ class BF:
                 self.neighbour_ip[neighbour] = ip
             for item in j["interfaces"]:
                 self.dv[item] = (self.dv['id'], 0)  # Zero cost to our own interfaces
-
+        print ("Configuration read")
 
     def build_data_to_transmit(self):
         return json.dumps(self.dv)
@@ -83,15 +95,22 @@ class BF:
         data = self.build_data_to_transmit()
         for node in self.connections:
             try:
-                self.connections[node].sendall(data)
+                print ("Sending: ", data)
+                self.connections[node].sendall(data+config.DELIM)
             except:
                 print ("Could not send data to:", node)
 
     def process_incoming(self, data):
+        print("Received: ", data)
+        if not data:
+            return False
         neighbour_dvs = json.loads(data)
         # Flag to check whether our dv has changed.
         change = False
+        print (self.neighbour_ip)
         neighbour_ip = self.neighbour_ip[neighbour_dvs['id']]
+        if neighbour_ip == self.dv['id']:
+            return False
         for ip in neighbour_dvs:
             if ip == 'id':
                 continue
@@ -115,7 +134,9 @@ class BF:
             change = False
             try:
                 data = BF.q.get(timeout=config.frequency)
-                change = self.process_incoming(data)
+                messages = data.split(config.DELIM)
+                for message in messages[:-1]:
+                    change = change or self.process_incoming(message)
             except Queue.Empty:
                 pass
             finally:
@@ -123,8 +144,18 @@ class BF:
                 change = change or self.check_costs()
                 # If there is any change, then send to all nodes
                 if change:
+                    print ("The DV was changed. So we send the updated costs to everyone")
                     self.send_all()
+                else:
+                    print("No change in the distance vector. Cost not updated")
+
+
+def handler():
+    print ("Bbye. Hope this kills my child")
 
 
 if __name__ == '__main__':
-    BF()
+    try:
+        BF()
+    except KeyboardInterrupt:
+        handler()
