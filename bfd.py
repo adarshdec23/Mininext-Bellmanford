@@ -14,6 +14,7 @@ class BF:
         self.dv = {}
         self.interfaces = {}
         self.connections = {}
+        self.neighbour_ip = {}
         # Read the costs and id of the node
         self.read_config()
         # Listen, start the server to listen to incoming packets
@@ -56,7 +57,7 @@ class BF:
 
     # Establish a connection with each neighbour
     def connect(self):
-        for node, ip in self.interfaces.items():
+        for node, ip in self.neighbour_ip.items():
             port = config.port
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.connect((ip, port))
@@ -65,12 +66,15 @@ class BF:
     def read_config(self):
         # Read my name and interfaces
         with open(config.config_file) as f:
-            lines = f.readlines()
-            self.dv['id'] = lines[0]
-            for line in lines[1:]:
-                neighbour, ip, cost = line.split(" ")
-                self.interfaces[neighbour] = ip
-                self.dv[neighbour] = (neighbour, cost)
+            j = json.load(f)
+            self.dv['id'] = j['id']
+            for item in j["neighbours"]:
+                neighbour, ip, cost = item["node"], item["ip"], item["cost"]
+                self.dv[ip] = (neighbour, cost)
+                self.neighbour_ip[neighbour] = ip
+            for item in j["interfaces"]:
+                self.dv[item] = (self.dv['id'], 0)  # Zero cost to our own interfaces
+
 
     def build_data_to_transmit(self):
         return json.dumps(self.dv)
@@ -87,10 +91,13 @@ class BF:
         neighbour_dvs = json.loads(data)
         # Flag to check whether our dv has changed.
         change = False
-        for node in neighbour_dvs:
-            possible_cost = int(neighbour_dvs[node][config.COST]) + self.dv[neighbour_dvs['id']][config.COST]
-            if self.dv.get(node, (" ", sys.maxint))[config.COST] > possible_cost:
-                self.dv[node] = (neighbour_dvs['id'], possible_cost)
+        neighbour_ip = self.neighbour_ip[neighbour_dvs['id']]
+        for ip in neighbour_dvs:
+            if ip == 'id':
+                continue
+            possible_cost = int(neighbour_dvs[ip][config.COST]) + int(self.dv[neighbour_ip][config.COST])
+            if self.dv.get(ip, (" ", sys.maxint))[config.COST] > possible_cost:
+                self.dv[ip] = (neighbour_dvs['id'], possible_cost)
                 change = True
         return change
 
