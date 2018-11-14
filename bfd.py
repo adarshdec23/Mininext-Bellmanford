@@ -108,9 +108,9 @@ class BF:
         # Flag to check whether our dv has changed.
         change = False
         print (self.neighbour_ip)
-        neighbour_ip = self.neighbour_ip[neighbour_dvs['id']]
-        if neighbour_ip == self.dv['id']:
+        if neighbour_dvs['id'] == self.dv['id']:
             return False
+        neighbour_ip = self.neighbour_ip[neighbour_dvs['id']]
         for ip in neighbour_dvs:
             if ip == 'id':
                 continue
