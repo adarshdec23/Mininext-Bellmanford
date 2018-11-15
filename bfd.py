@@ -5,6 +5,7 @@ import Queue
 import json
 import sys
 import time
+from tabulate import tabulate
 
 
 class BF:
@@ -14,8 +15,7 @@ class BF:
 
     def __init__(self):
         self.dv = {}
-        self.interfaces = {}
-        self.connections = {}
+        self.interfaces = []
         self.neighbour_ip = {}
         # Read the costs and id of the node
         self.read_config()
@@ -45,7 +45,6 @@ class BF:
                 # Read data till there's nothing left to read
                 while True:
                     try:
-                        flog.write("It shoule be here before recv\n")
                         data = connection.recv(1024)
                         if not data:
                             flog.write("Nothing more to get, breaking\n")
@@ -90,6 +89,7 @@ class BF:
                 self.neighbour_ip[neighbour] = ip
             for item in j["interfaces"]:
                 self.dv[item] = (self.dv['id'], 0)  # Zero cost to our own interfaces
+                self.interfaces.append(item)
         print ("Configuration read")
 
     def build_data_to_transmit(self):
@@ -132,6 +132,38 @@ class BF:
         :return: True if there's a change, False otherwise
         """
         return False
+        change = False
+        with open(config.config_file, 'r') as f:
+            j = json.load(f)
+            for item in j["neighbours"]:
+                ip, cost = item["ip"], item["cost"]
+                if cost != self.dv[ip][config.COST]:
+                    change = True
+                    self.dv[ip] = (ip, cost)
+        return change
+
+
+    def print_routing_table(self):
+        """
+        Dynamically build a routing table. This is not ideal, but it's comparatively simple to
+        rebuild the table every time the method is called
+        :return: None
+        """
+        table = []
+        header = ["Destination Network", "Next Hop", "Cost"]
+        # Add immediate neighbours to the routing table
+        for node, ip in self.neighbour_ip.items():
+            # [IP, NextHOP, COST]
+            table.append([ip, "Direct", self.dv[ip][config.COST]])
+        neighbour_ip = self.neighbour_ip.keys()
+        for dest in self.dv:
+            next_hop, cost = self.dv[dest]
+            if dest in neighbour_ip or dest in self.interfaces:
+                # Already considered in the previous loop, so ignore
+                # Or it's me, so ignore
+                continue
+            table.append([dest, next_hop, cost])
+        print(tabulate(table, headers=header))
 
     def run(self):
         # Run infinitely.
@@ -148,24 +180,20 @@ class BF:
             except Queue.Empty:
                 pass
             finally:
-                # No change in dv, let's check the cost to check for changes
+                # No change in dv, let's check the cost file for changes
                 change = change or self.check_costs()
                 # If there is any change, then send to all nodes
                 if change:
                     print ("The DV was changed. So we send the updated costs to everyone")
-                    print(self.dv)
+                    self.print_routing_table()
                     self.send_all()
                 else:
                     print("No change in the distance vector. Cost not updated, current state is:")
-                    print(self.dv)
-
-
-def handler():
-    print ("Bbye. Hope this kills my child")
+                    self.print_routing_table()
 
 
 if __name__ == '__main__':
     try:
         BF()
     except KeyboardInterrupt:
-        handler()
+        print("Bbye. Hope this kills my child")
