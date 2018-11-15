@@ -23,14 +23,12 @@ class BF:
         self.listen()
         # Wait for a while for the thread to go up
         time.sleep(0.5)
-        # Set up connection with all neighbours
-        #self.connect()
         # Broadcast the initial costs to all neighbours
         self.send_all()
         # Main even loop
         self.run()
 
-    # Method that is always listening to updates from other nodes.
+    # Method that is always listening for updates from other nodes.
     @staticmethod
     def thread_listener():
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
